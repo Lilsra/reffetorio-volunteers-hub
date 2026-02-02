@@ -112,12 +112,19 @@ export function ReservationCalendar({ volunteerId, volunteerEmail, onBack }: Res
         return;
       }
 
+      // Get volunteer info for notification
+      const { data: volunteer } = await supabase
+        .from("volunteers")
+        .select("first_name, last_name")
+        .eq("id", volunteerId)
+        .single();
+
       // Create reservation
-      const { error } = await supabase.from("reservations").insert({
+      const { data: reservation, error } = await supabase.from("reservations").insert({
         volunteer_id: volunteerId,
         reservation_date: dateStr,
         status: "pending",
-      });
+      }).select().single();
 
       if (error) {
         if (error.code === "23505") {
@@ -126,6 +133,21 @@ export function ReservationCalendar({ volunteerId, volunteerEmail, onBack }: Res
           throw error;
         }
         return;
+      }
+
+      // Send notification to admin
+      try {
+        await supabase.functions.invoke("send-reservation-notification", {
+          body: {
+            reservation_id: reservation.id,
+            volunteer_name: `${volunteer?.first_name} ${volunteer?.last_name}`,
+            volunteer_email: volunteerEmail,
+            reservation_date: dateStr,
+          },
+        });
+      } catch (notifError) {
+        console.error("Error sending notification:", notifError);
+        // Don't fail the reservation if notification fails
       }
 
       toast.success(
