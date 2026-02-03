@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Header } from "@/components/Header";
 import { VolunteerForm } from "@/components/VolunteerForm";
 import { ReservationCalendar } from "@/components/ReservationCalendar";
@@ -98,10 +99,16 @@ const Index = () => {
 
       {/* Footer */}
       <footer className="py-6 border-t border-border/50">
-        <div className="container mx-auto px-4 text-center">
+        <div className="container mx-auto px-4 text-center space-y-2">
           <p className="text-sm text-muted-foreground">
             © {new Date().getFullYear()} Reffetorio Mérida. Todos los derechos reservados.
           </p>
+          <Link 
+            to="/admin/login" 
+            className="text-xs text-muted-foreground/60 hover:text-primary transition-colors"
+          >
+            Administración
+          </Link>
         </div>
       </footer>
     </div>
