@@ -1,8 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { Resend } from "https://esm.sh/resend@2.0.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
+import { sendEmail, formatDate } from "../_shared/email-sender.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -65,27 +63,25 @@ const handler = async (req: Request): Promise<Response> => {
       throw new Error("Error al actualizar reservación");
     }
 
-    // Format date for email
-    const dateObj = new Date(reservation.reservation_date + "T12:00:00");
-    const formattedDate = dateObj.toLocaleDateString("es-MX", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-
+    const formattedDate = formatDate(reservation.reservation_date);
     const volunteerName = `${reservation.volunteers.first_name} ${reservation.volunteers.last_name}`;
     const volunteerEmail = reservation.volunteers.email;
-
-    // Send confirmation email to volunteer
     const isConfirmed = action === "confirm";
-    
-    const emailResponse = await resend.emails.send({
-      from: "Reffetorio Mérida <noreply@resend.dev>",
-      to: [volunteerEmail],
+    const emailType = isConfirmed ? 'confirmation' : 'cancellation';
+
+    // Send email to volunteer using shared email sender
+    const emailResult = await sendEmail({
+      to: volunteerEmail,
       subject: isConfirmed 
-        ? `¡Tu reservación ha sido confirmada! - ${formattedDate}`
+        ? `Tu reservación ha sido confirmada - ${formattedDate}`
         : `Reservación cancelada - ${formattedDate}`,
+      emailType,
+      relatedId: reservation_id,
+      metadata: {
+        volunteer_name: volunteerName,
+        reservation_date: reservation.reservation_date,
+        action,
+      },
       html: `
         <!DOCTYPE html>
         <html>
@@ -104,23 +100,23 @@ const handler = async (req: Request): Promise<Response> => {
           <div class="container">
             <div class="header">
               <p class="emoji">${isConfirmed ? '✅' : '❌'}</p>
-              <h1>${isConfirmed ? '¡Reservación Confirmada!' : 'Reservación Cancelada'}</h1>
+              <h1>${isConfirmed ? 'Reservación Confirmada' : 'Reservación Cancelada'}</h1>
               <p>Reffetorio Mérida</p>
             </div>
             <div class="content">
               <p>Hola <strong>${volunteerName}</strong>,</p>
               
               ${isConfirmed ? `
-                <p>¡Nos da mucho gusto confirmar tu participación como voluntario!</p>
+                <p>Nos da mucho gusto confirmar tu participación como voluntario.</p>
                 
                 <div class="info-box">
-                  <h3 style="margin-top: 0; color: #5a8f5a;">📅 Detalles de tu Reservación</h3>
+                  <h3 style="margin-top: 0; color: #5a8f5a;">Detalles de tu Reservación</h3>
                   <p><strong>Fecha:</strong> ${formattedDate}</p>
                   <p><strong>Horario:</strong> 12:00 - 15:00 hrs</p>
                   <p><strong>Ubicación:</strong> Reffetorio Mérida</p>
                 </div>
 
-                <h3>📋 Recomendaciones:</h3>
+                <h3>Recomendaciones:</h3>
                 <ul>
                   <li>Llega 10 minutos antes de tu horario</li>
                   <li>Usa ropa cómoda y zapato cerrado</li>
@@ -137,7 +133,7 @@ const handler = async (req: Request): Promise<Response> => {
                 </div>
               `}
 
-              <p>¡Gracias por tu interés en apoyar a nuestra comunidad!</p>
+              <p>Gracias por tu interés en apoyar a nuestra comunidad.</p>
             </div>
             <div class="footer">
               <p>© ${new Date().getFullYear()} Reffetorio Mérida</p>
@@ -149,16 +145,28 @@ const handler = async (req: Request): Promise<Response> => {
       `,
     });
 
-    console.log("Volunteer notification sent:", emailResponse);
+    if (!emailResult.success) {
+      console.error("Failed to send volunteer notification:", emailResult.error);
+      // Don't throw - reservation was updated successfully, just log the email error
+    } else {
+      console.log("Volunteer notification sent:", emailResult.messageId);
+    }
 
-    return new Response(JSON.stringify({ success: true, status: newStatus }), {
+    return new Response(JSON.stringify({ 
+      success: true, 
+      status: newStatus,
+      emailSent: emailResult.success,
+      messageId: emailResult.messageId,
+      logId: emailResult.logId,
+    }), {
       status: 200,
       headers: { "Content-Type": "application/json", ...corsHeaders },
     });
-  } catch (error: any) {
-    console.error("Error confirming reservation:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+    console.error("Error confirming reservation:", errorMessage);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
   }

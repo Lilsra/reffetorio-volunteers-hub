@@ -1,8 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { Resend } from "https://esm.sh/resend@2.0.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendEmail } from "../_shared/email-sender.ts";
 
-const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 const adminEmail = Deno.env.get("ADMIN_EMAIL");
 
 const corsHeaders = {
@@ -79,15 +78,31 @@ const handler = async (req: Request): Promise<Response> => {
       .eq("reservation_date", tomorrowStr)
       .eq("status", "confirmed");
 
-    const volunteerList = volunteers?.map(
-      (v: any) => `${v.volunteers.first_name} ${v.volunteers.last_name}`
-    ) || [];
+    const volunteerList: string[] = [];
+    if (volunteers) {
+      for (const v of volunteers) {
+        if (v.volunteers && typeof v.volunteers === 'object' && !Array.isArray(v.volunteers)) {
+          const vol = v.volunteers as { first_name: string; last_name: string };
+          volunteerList.push(`${vol.first_name} ${vol.last_name}`);
+        }
+      }
+    }
 
-    // Send alert to admin
-    const emailResponse = await resend.emails.send({
-      from: "Reffetorio Mérida <noreply@resend.dev>",
-      to: [adminEmail],
-      subject: `⚠️ Alerta: ${availableSlots} cupos sin llenar para mañana`,
+    // Generate a unique ID for this alert (date-based to prevent duplicates same day)
+    const alertId = `alert-${tomorrowStr}`;
+
+    // Send alert to admin using shared email sender
+    const emailResult = await sendEmail({
+      to: adminEmail,
+      subject: `Alerta: ${availableSlots} cupos sin llenar para mañana`,
+      emailType: 'unfilled_slots_alert',
+      relatedId: alertId,
+      metadata: {
+        target_date: tomorrowStr,
+        current_count: currentCount,
+        available_slots: availableSlots,
+        confirmed_volunteers: volunteerList,
+      },
       html: `
         <!DOCTYPE html>
         <html>
@@ -108,12 +123,12 @@ const handler = async (req: Request): Promise<Response> => {
         <body>
           <div class="container">
             <div class="header">
-              <h1>⚠️ Alerta de Cupos</h1>
+              <h1>Alerta de Cupos</h1>
               <p>Reffetorio Mérida - Portal de Voluntarios</p>
             </div>
             <div class="content">
               <div class="alert-box">
-                <h2 style="margin: 0; color: #856404;">¡Faltan voluntarios para mañana!</h2>
+                <h2 style="margin: 0; color: #856404;">Faltan voluntarios para mañana</h2>
                 <p style="margin-bottom: 0;">${formattedDate}</p>
               </div>
 
@@ -157,21 +172,28 @@ const handler = async (req: Request): Promise<Response> => {
       `,
     });
 
-    console.log("Unfilled slots alert sent:", emailResponse);
+    if (!emailResult.success) {
+      console.error("Failed to send unfilled slots alert:", emailResult.error);
+      throw new Error(`Error al enviar alerta: ${emailResult.error}`);
+    }
+
+    console.log("Unfilled slots alert sent:", emailResult.messageId);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
         slots_filled: currentCount, 
         slots_available: availableSlots,
-        emailResponse 
+        messageId: emailResult.messageId,
+        logId: emailResult.logId,
       }),
       { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
-  } catch (error: any) {
-    console.error("Error checking unfilled slots:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+    console.error("Error checking unfilled slots:", errorMessage);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
   }

@@ -1,8 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { Resend } from "https://esm.sh/resend@2.0.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendEmail, formatDate } from "../_shared/email-sender.ts";
 
-const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 const adminEmail = Deno.env.get("ADMIN_EMAIL");
 
 const corsHeaders = {
@@ -34,14 +33,7 @@ const handler = async (req: Request): Promise<Response> => {
       throw new Error("ADMIN_EMAIL no configurado");
     }
 
-    // Format date for display
-    const dateObj = new Date(reservation_date + "T12:00:00");
-    const formattedDate = dateObj.toLocaleDateString("es-MX", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
+    const formattedDate = formatDate(reservation_date);
 
     // Get current reservations count for this date
     const supabase = createClient(
@@ -58,11 +50,18 @@ const handler = async (req: Request): Promise<Response> => {
     const currentCount = count || 0;
     const availableSlots = 23 - currentCount;
 
-    // Send notification to admin
-    const emailResponse = await resend.emails.send({
-      from: "Reffetorio Mérida <noreply@resend.dev>",
-      to: [adminEmail],
+    // Send notification to admin using shared email sender
+    const emailResult = await sendEmail({
+      to: adminEmail,
       subject: `Nueva reservación de voluntario - ${formattedDate}`,
+      emailType: 'new_reservation',
+      relatedId: reservation_id,
+      metadata: {
+        volunteer_name,
+        volunteer_email,
+        reservation_date,
+        current_count: currentCount,
+      },
       html: `
         <!DOCTYPE html>
         <html>
@@ -74,18 +73,17 @@ const handler = async (req: Request): Promise<Response> => {
             .content { background: #faf8f5; padding: 30px; border: 1px solid #e5ddd5; border-top: none; border-radius: 0 0 10px 10px; }
             .info-box { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #c45d35; }
             .slots-info { background: ${availableSlots <= 5 ? '#fff3cd' : '#d4edda'}; padding: 15px; border-radius: 8px; text-align: center; margin-top: 20px; }
-            .btn { display: inline-block; padding: 12px 30px; background: #c45d35; color: white; text-decoration: none; border-radius: 6px; margin-top: 20px; }
             .footer { text-align: center; padding: 20px; color: #666; font-size: 14px; }
           </style>
         </head>
         <body>
           <div class="container">
             <div class="header">
-              <h1>🍽️ Nueva Reservación</h1>
+              <h1>Nueva Reservación</h1>
               <p>Reffetorio Mérida - Portal de Voluntarios</p>
             </div>
             <div class="content">
-              <p>¡Hola! Un nuevo voluntario ha solicitado reservar un día.</p>
+              <p>Un nuevo voluntario ha solicitado reservar un día.</p>
               
               <div class="info-box">
                 <h3 style="margin-top: 0; color: #c45d35;">Datos del Voluntario</h3>
@@ -110,16 +108,26 @@ const handler = async (req: Request): Promise<Response> => {
       `,
     });
 
-    console.log("Admin notification sent:", emailResponse);
+    if (!emailResult.success) {
+      console.error("Failed to send admin notification:", emailResult.error);
+      throw new Error(`Error al enviar notificación: ${emailResult.error}`);
+    }
 
-    return new Response(JSON.stringify({ success: true, emailResponse }), {
+    console.log("Admin notification sent successfully:", emailResult.messageId);
+
+    return new Response(JSON.stringify({ 
+      success: true, 
+      messageId: emailResult.messageId,
+      logId: emailResult.logId,
+    }), {
       status: 200,
       headers: { "Content-Type": "application/json", ...corsHeaders },
     });
-  } catch (error: any) {
-    console.error("Error sending notification:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+    console.error("Error sending notification:", errorMessage);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
   }
