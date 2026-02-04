@@ -44,6 +44,51 @@ export type Database = {
         }
         Relationships: []
       }
+      email_logs: {
+        Row: {
+          created_at: string
+          email_to: string
+          email_type: string
+          error_message: string | null
+          id: string
+          metadata: Json | null
+          related_id: string | null
+          resend_message_id: string | null
+          retry_count: number
+          sent_at: string | null
+          status: string
+          subject: string
+        }
+        Insert: {
+          created_at?: string
+          email_to: string
+          email_type: string
+          error_message?: string | null
+          id?: string
+          metadata?: Json | null
+          related_id?: string | null
+          resend_message_id?: string | null
+          retry_count?: number
+          sent_at?: string | null
+          status?: string
+          subject: string
+        }
+        Update: {
+          created_at?: string
+          email_to?: string
+          email_type?: string
+          error_message?: string | null
+          id?: string
+          metadata?: Json | null
+          related_id?: string | null
+          resend_message_id?: string | null
+          retry_count?: number
+          sent_at?: string | null
+          status?: string
+          subject?: string
+        }
+        Relationships: []
+      }
       reservations: {
         Row: {
           confirmed_at: string | null
@@ -114,6 +159,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_duplicate_email: {
+        Args: {
+          p_email_to: string
+          p_email_type: string
+          p_related_id: string
+          p_time_window_minutes?: number
+        }
+        Returns: boolean
+      }
       get_available_slots: { Args: { target_date: string }; Returns: number }
       get_reservations_count: { Args: { target_date: string }; Returns: number }
     }
