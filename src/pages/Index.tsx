@@ -4,6 +4,8 @@ import { Header } from "@/components/Header";
 import { VolunteerForm } from "@/components/VolunteerForm";
 import { ReservationCalendar } from "@/components/ReservationCalendar";
 import { VolunteerProfile } from "@/components/VolunteerProfile";
+import { Button } from "@/components/ui/button";
+import { User } from "lucide-react";
 
 type Step = "register" | "calendar" | "profile";
 
@@ -58,12 +60,14 @@ const Index = () => {
                     volunteerEmail={volunteerInfo.email}
                     onBack={handleBack}
                   />
-                  <button
+                  <Button
+                    variant="outline"
                     onClick={() => setStep("profile")}
-                    className="text-sm text-muted-foreground hover:text-primary transition-colors underline"
+                    className="gap-2 border-primary/30 text-primary hover:bg-primary/10 hover:border-primary shadow-sm"
                   >
+                    <User className="h-4 w-4" />
                     Ver mi perfil
-                  </button>
+                  </Button>
                 </div>
               )
             ) : (

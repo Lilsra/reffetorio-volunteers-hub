@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { User, Mail, MapPin, Phone, Calendar, Edit3, Save, X, History } from "lucide-react";
+import { User, Mail, MapPin, Phone, Calendar, Edit3, Save, X, History, Camera } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -41,8 +41,10 @@ export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps)
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [volunteer, setVolunteer] = useState<any>(null);
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
     register,
@@ -92,6 +94,58 @@ export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps)
       .limit(10);
 
     setReservations(data || []);
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file
+    if (!file.type.startsWith("image/")) {
+      toast.error("Solo se permiten archivos de imagen");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("La imagen no debe pesar más de 2 MB");
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+    try {
+      const fileExt = file.name.split(".").pop();
+      const filePath = `${volunteerId}.${fileExt}`;
+
+      // Upload to storage
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(filePath);
+
+      // Add cache buster to force reload
+      const avatarUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+
+      // Update volunteer record
+      const { error: updateError } = await supabase
+        .from("volunteers")
+        .update({ avatar_url: avatarUrl })
+        .eq("id", volunteerId);
+
+      if (updateError) throw updateError;
+
+      toast.success("Foto actualizada correctamente");
+      loadProfile();
+    } catch (error) {
+      console.error("Error uploading photo:", error);
+      toast.error("Error al subir la foto");
+    } finally {
+      setIsUploadingPhoto(false);
+    }
   };
 
   const onSubmit = async (data: ProfileFormData) => {
@@ -164,7 +218,47 @@ export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps)
               </Button>
             )}
           </div>
-          <CardTitle className="text-xl font-display text-primary text-center">Mi Perfil</CardTitle>
+
+          {/* Avatar Section */}
+          <div className="flex flex-col items-center pt-2 pb-1">
+            <div className="relative group">
+              <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-primary/20 bg-muted flex items-center justify-center shadow-md">
+                {volunteer.avatar_url ? (
+                  <img
+                    src={volunteer.avatar_url}
+                    alt="Foto de perfil"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <User className="h-10 w-10 text-muted-foreground" />
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingPhoto}
+                className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg hover:bg-primary/90 transition-colors border-2 border-background"
+              >
+                {isUploadingPhoto ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-foreground border-t-transparent" />
+                ) : (
+                  <Camera className="h-4 w-4" />
+                )}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handlePhotoUpload}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">Toca el ícono para cambiar tu foto</p>
+          </div>
+
+          <CardTitle className="text-xl font-display text-primary text-center">
+            {volunteer.first_name} {volunteer.last_name}
+          </CardTitle>
           <CardDescription className="text-center">
             Registrado el {format(new Date(volunteer.created_at), "d 'de' MMMM, yyyy", { locale: es })}
           </CardDescription>
