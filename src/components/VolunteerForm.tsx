@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { User, Mail, MapPin, Calendar, Phone } from "lucide-react";
+import { User, Mail, MapPin, Calendar, Phone, Camera, X } from "lucide-react";
 
 const phoneRegex = /^[0-9]{10}$/;
 
@@ -29,6 +29,9 @@ interface VolunteerFormProps {
 
 export function VolunteerForm({ onSuccess }: VolunteerFormProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
     register,
@@ -38,6 +41,54 @@ export function VolunteerForm({ onSuccess }: VolunteerFormProps) {
   } = useForm<VolunteerFormData>({
     resolver: zodResolver(volunteerSchema),
   });
+
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Solo se permiten archivos de imagen");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("La imagen no debe pesar más de 2 MB");
+      return;
+    }
+
+    setPhotoFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setPhotoPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const removePhoto = () => {
+    setPhotoFile(null);
+    setPhotoPreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const uploadPhoto = async (volunteerId: string): Promise<string | null> => {
+    if (!photoFile) return null;
+    try {
+      const fileExt = photoFile.name.split(".").pop();
+      const filePath = `${volunteerId}.${fileExt}`;
+
+      const { error } = await supabase.storage
+        .from("avatars")
+        .upload(filePath, photoFile, { upsert: true });
+
+      if (error) throw error;
+
+      const { data: urlData } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(filePath);
+
+      return `${urlData.publicUrl}?t=${Date.now()}`;
+    } catch (error) {
+      console.error("Error uploading photo:", error);
+      return null;
+    }
+  };
 
   const onSubmit = async (data: VolunteerFormData) => {
     setIsLoading(true);
@@ -81,9 +132,21 @@ export function VolunteerForm({ onSuccess }: VolunteerFormProps) {
         throw error;
       }
 
+      // Upload photo if selected
+      if (photoFile) {
+        const avatarUrl = await uploadPhoto(volunteer.id);
+        if (avatarUrl) {
+          await supabase
+            .from("volunteers")
+            .update({ avatar_url: avatarUrl })
+            .eq("id", volunteer.id);
+        }
+      }
+
       toast.success("¡Registro exitoso! Ahora selecciona tu día de voluntariado.");
       onSuccess(volunteer.id, volunteer.email);
       reset();
+      removePhoto();
     } catch (error: any) {
       console.error("Error registering volunteer:", error);
       toast.error("Error al registrar. Por favor intenta de nuevo.");
@@ -104,6 +167,41 @@ export function VolunteerForm({ onSuccess }: VolunteerFormProps) {
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          {/* Optional Photo */}
+          <div className="flex flex-col items-center">
+            <div className="relative">
+              <div className="w-20 h-20 rounded-full overflow-hidden border-3 border-dashed border-border bg-muted flex items-center justify-center cursor-pointer hover:border-primary/50 transition-colors"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {photoPreview ? (
+                  <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="text-center">
+                    <Camera className="h-6 w-6 text-muted-foreground mx-auto" />
+                    <span className="text-[10px] text-muted-foreground">Opcional</span>
+                  </div>
+                )}
+              </div>
+              {photoPreview && (
+                <button
+                  type="button"
+                  onClick={removePhoto}
+                  className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center shadow-sm hover:bg-destructive/90"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handlePhotoSelect}
+            />
+            <p className="text-xs text-muted-foreground mt-1">Foto de perfil (opcional, máx. 2 MB)</p>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="first_name" className="flex items-center gap-2">
