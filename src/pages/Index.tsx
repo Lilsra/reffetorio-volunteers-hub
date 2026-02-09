@@ -3,8 +3,9 @@ import { Link } from "react-router-dom";
 import { Header } from "@/components/Header";
 import { VolunteerForm } from "@/components/VolunteerForm";
 import { ReservationCalendar } from "@/components/ReservationCalendar";
+import { VolunteerProfile } from "@/components/VolunteerProfile";
 
-type Step = "register" | "calendar";
+type Step = "register" | "calendar" | "profile";
 
 interface VolunteerInfo {
   id: string;
@@ -35,24 +36,41 @@ const Index = () => {
         <div className="container mx-auto px-4 relative">
           <div className="text-center mb-8 animate-fade-in">
             <h2 className="text-3xl md:text-4xl font-display font-bold text-foreground mb-3">
-              {step === "register" ? "¡Únete como Voluntario!" : "Reserva tu Día"}
+              {step === "register" ? "¡Únete como Voluntario!" : step === "calendar" ? "Reserva tu Día" : "Tu Perfil"}
             </h2>
             <p className="text-muted-foreground max-w-xl mx-auto">
               {step === "register"
                 ? "Tu ayuda hace la diferencia. Regístrate y selecciona los días que puedas apoyar en nuestra cocina comunitaria."
-                : "Selecciona el día que deseas asistir. El servicio es de 12:00 a 15:00 hrs."}
+                : step === "calendar"
+                ? "Selecciona el día que deseas asistir. El servicio es de 12:00 a 15:00 hrs."
+                : "Revisa y actualiza tu información personal."}
             </p>
           </div>
 
           <div className="flex justify-center">
             {step === "register" ? (
               <VolunteerForm onSuccess={handleRegistrationSuccess} />
+            ) : step === "calendar" ? (
+              volunteerInfo && (
+                <div className="space-y-4 w-full flex flex-col items-center">
+                  <ReservationCalendar
+                    volunteerId={volunteerInfo.id}
+                    volunteerEmail={volunteerInfo.email}
+                    onBack={handleBack}
+                  />
+                  <button
+                    onClick={() => setStep("profile")}
+                    className="text-sm text-muted-foreground hover:text-primary transition-colors underline"
+                  >
+                    Ver mi perfil
+                  </button>
+                </div>
+              )
             ) : (
               volunteerInfo && (
-                <ReservationCalendar
+                <VolunteerProfile
                   volunteerId={volunteerInfo.id}
-                  volunteerEmail={volunteerInfo.email}
-                  onBack={handleBack}
+                  onBack={() => setStep("calendar")}
                 />
               )
             )}

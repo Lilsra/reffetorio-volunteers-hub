@@ -8,14 +8,17 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { User, Mail, MapPin, Calendar } from "lucide-react";
+import { User, Mail, MapPin, Calendar, Phone } from "lucide-react";
+
+const phoneRegex = /^[0-9]{10}$/;
 
 const volunteerSchema = z.object({
-  first_name: z.string().min(2, "El nombre debe tener al menos 2 caracteres").max(50),
-  last_name: z.string().min(2, "Los apellidos deben tener al menos 2 caracteres").max(100),
-  age: z.number().min(16, "Debes tener al menos 16 años").max(100, "Edad inválida"),
-  address: z.string().min(10, "La dirección debe ser más específica").max(200),
-  email: z.string().email("Correo electrónico inválido").max(100),
+  first_name: z.string().trim().min(2, "El nombre debe tener al menos 2 caracteres").max(50, "El nombre es demasiado largo"),
+  last_name: z.string().trim().min(2, "Los apellidos deben tener al menos 2 caracteres").max(100, "Los apellidos son demasiado largos"),
+  age: z.number({ invalid_type_error: "Ingresa una edad válida" }).min(16, "Debes tener al menos 16 años").max(100, "Edad inválida"),
+  address: z.string().trim().min(10, "La dirección debe ser más específica").max(200, "La dirección es demasiado larga"),
+  email: z.string().trim().email("Correo electrónico inválido").max(100, "El correo es demasiado largo").toLowerCase(),
+  phone: z.string().trim().regex(phoneRegex, "Ingresa un número de 10 dígitos"),
 });
 
 type VolunteerFormData = z.infer<typeof volunteerSchema>;
@@ -42,14 +45,17 @@ export function VolunteerForm({ onSuccess }: VolunteerFormProps) {
       // Check if email already exists
       const { data: existing } = await supabase
         .from("volunteers")
-        .select("id, email")
+        .select("id, email, first_name, status")
         .eq("email", data.email)
         .maybeSingle();
 
       if (existing) {
-        // Volunteer already registered, proceed to calendar
+        if (existing.status === "inactive") {
+          toast.error("Tu cuenta está inactiva. Contacta al administrador.");
+          return;
+        }
         onSuccess(existing.id, existing.email);
-        toast.info("¡Ya estás registrado! Selecciona tu día de voluntariado.");
+        toast.info(`¡Bienvenido de nuevo, ${existing.first_name}! Selecciona tu día de voluntariado.`);
         return;
       }
 
@@ -57,16 +63,23 @@ export function VolunteerForm({ onSuccess }: VolunteerFormProps) {
       const { data: volunteer, error } = await supabase
         .from("volunteers")
         .insert({
-          first_name: data.first_name,
-          last_name: data.last_name,
+          first_name: data.first_name.trim(),
+          last_name: data.last_name.trim(),
           age: data.age,
-          address: data.address,
-          email: data.email,
+          address: data.address.trim(),
+          email: data.email.trim().toLowerCase(),
+          phone: data.phone.trim(),
         })
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        if (error.code === "23505") {
+          toast.error("Este correo ya está registrado. Intenta con otro.");
+          return;
+        }
+        throw error;
+      }
 
       toast.success("¡Registro exitoso! Ahora selecciona tu día de voluntariado.");
       onSuccess(volunteer.id, volunteer.email);
@@ -95,7 +108,7 @@ export function VolunteerForm({ onSuccess }: VolunteerFormProps) {
             <div className="space-y-2">
               <Label htmlFor="first_name" className="flex items-center gap-2">
                 <User className="h-4 w-4 text-primary" />
-                Nombre
+                Nombre <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="first_name"
@@ -111,7 +124,7 @@ export function VolunteerForm({ onSuccess }: VolunteerFormProps) {
             <div className="space-y-2">
               <Label htmlFor="last_name" className="flex items-center gap-2">
                 <User className="h-4 w-4 text-primary" />
-                Apellidos
+                Apellidos <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="last_name"
@@ -124,26 +137,45 @@ export function VolunteerForm({ onSuccess }: VolunteerFormProps) {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="age" className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-primary" />
-              Edad
-            </Label>
-            <Input
-              id="age"
-              type="number"
-              placeholder="Tu edad"
-              {...register("age", { valueAsNumber: true })}
-            />
-            {errors.age && (
-              <p className="text-sm text-destructive">{errors.age.message}</p>
-            )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="age" className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-primary" />
+                Edad <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="age"
+                type="number"
+                placeholder="Tu edad"
+                {...register("age", { valueAsNumber: true })}
+              />
+              {errors.age && (
+                <p className="text-sm text-destructive">{errors.age.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="phone" className="flex items-center gap-2">
+                <Phone className="h-4 w-4 text-primary" />
+                Teléfono <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="phone"
+                type="tel"
+                placeholder="9991234567"
+                maxLength={10}
+                {...register("phone")}
+              />
+              {errors.phone && (
+                <p className="text-sm text-destructive">{errors.phone.message}</p>
+              )}
+            </div>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="address" className="flex items-center gap-2">
               <MapPin className="h-4 w-4 text-primary" />
-              Dirección
+              Dirección <span className="text-destructive">*</span>
             </Label>
             <Input
               id="address"
@@ -158,7 +190,7 @@ export function VolunteerForm({ onSuccess }: VolunteerFormProps) {
           <div className="space-y-2">
             <Label htmlFor="email" className="flex items-center gap-2">
               <Mail className="h-4 w-4 text-primary" />
-              Correo electrónico
+              Correo electrónico <span className="text-destructive">*</span>
             </Label>
             <Input
               id="email"
@@ -170,6 +202,10 @@ export function VolunteerForm({ onSuccess }: VolunteerFormProps) {
               <p className="text-sm text-destructive">{errors.email.message}</p>
             )}
           </div>
+
+          <p className="text-xs text-muted-foreground">
+            Los campos marcados con <span className="text-destructive">*</span> son obligatorios.
+          </p>
 
           <Button
             type="submit"
