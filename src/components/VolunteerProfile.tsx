@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { User, Mail, MapPin, Phone, Calendar, Edit3, Save, X, History, Camera } from "lucide-react";
+import { User, Mail, MapPin, Phone, Calendar, Edit3, Save, X, History, Camera, CalendarCheck, Clock, CheckCircle2, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -90,8 +90,7 @@ export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps)
       .from("reservations")
       .select("id, reservation_date, status, created_at")
       .eq("volunteer_id", volunteerId)
-      .order("reservation_date", { ascending: false })
-      .limit(10);
+      .order("reservation_date", { ascending: false });
 
     setReservations(data || []);
   };
@@ -100,7 +99,6 @@ export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps)
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file
     if (!file.type.startsWith("image/")) {
       toast.error("Solo se permiten archivos de imagen");
       return;
@@ -115,22 +113,18 @@ export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps)
       const fileExt = file.name.split(".").pop();
       const filePath = `${volunteerId}.${fileExt}`;
 
-      // Upload to storage
       const { error: uploadError } = await supabase.storage
         .from("avatars")
         .upload(filePath, file, { upsert: true });
 
       if (uploadError) throw uploadError;
 
-      // Get public URL
       const { data: urlData } = supabase.storage
         .from("avatars")
         .getPublicUrl(filePath);
 
-      // Add cache buster to force reload
       const avatarUrl = `${urlData.publicUrl}?t=${Date.now()}`;
 
-      // Update volunteer record
       const { error: updateError } = await supabase
         .from("volunteers")
         .update({ avatar_url: avatarUrl })
@@ -198,25 +192,37 @@ export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps)
 
   if (!volunteer) return null;
 
+  // Stats
+  const totalRequested = reservations.length;
+  const totalConfirmed = reservations.filter((r) => r.status === "confirmed").length;
+  const totalPending = reservations.filter((r) => r.status === "pending").length;
+  const totalCancelled = reservations.filter((r) => r.status === "cancelled").length;
+
   return (
     <div className="w-full max-w-lg space-y-4 animate-fade-in">
+      {/* Profile Card */}
       <Card className="shadow-lg border-border/50">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <Button variant="ghost" size="sm" onClick={onBack} className="text-muted-foreground">
               ← Volver
             </Button>
-            {!isEditing ? (
-              <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
-                <Edit3 className="h-4 w-4 mr-1" />
-                Editar
-              </Button>
-            ) : (
-              <Button variant="ghost" size="sm" onClick={() => { setIsEditing(false); reset(); }}>
-                <X className="h-4 w-4 mr-1" />
-                Cancelar
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              <Badge variant={volunteer.status === "active" ? "default" : "secondary"} className="text-xs">
+                {volunteer.status === "active" ? "Activo" : "Inactivo"}
+              </Badge>
+              {!isEditing ? (
+                <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
+                  <Edit3 className="h-4 w-4 mr-1" />
+                  Editar
+                </Button>
+              ) : (
+                <Button variant="ghost" size="sm" onClick={() => { setIsEditing(false); reset(); }}>
+                  <X className="h-4 w-4 mr-1" />
+                  Cancelar
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* Avatar Section */}
@@ -331,29 +337,83 @@ export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps)
         </CardContent>
       </Card>
 
+      {/* Stats Summary */}
+      <Card className="shadow-lg border-border/50">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg font-display text-foreground flex items-center gap-2">
+            <CalendarCheck className="h-5 w-5 text-primary" />
+            Resumen de Actividad
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3">
+            <StatCard
+              icon={<Calendar className="h-5 w-5 text-primary" />}
+              label="Días solicitados"
+              value={totalRequested}
+              bgClass="bg-primary/10"
+            />
+            <StatCard
+              icon={<CheckCircle2 className="h-5 w-5 text-success" />}
+              label="Días aprobados"
+              value={totalConfirmed}
+              bgClass="bg-success/10"
+            />
+            <StatCard
+              icon={<Clock className="h-5 w-5 text-warning-foreground" />}
+              label="Pendientes"
+              value={totalPending}
+              bgClass="bg-warning/10"
+            />
+            <StatCard
+              icon={<AlertCircle className="h-5 w-5 text-destructive" />}
+              label="Cancelados"
+              value={totalCancelled}
+              bgClass="bg-destructive/10"
+            />
+          </div>
+          {totalRequested === 0 && (
+            <p className="text-sm text-muted-foreground text-center mt-4">
+              Aún no has solicitado ningún día de voluntariado.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Reservation History */}
-      {reservations.length > 0 && (
-        <Card className="shadow-lg border-border/50">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg font-display text-foreground flex items-center gap-2">
-              <History className="h-5 w-5 text-primary" />
-              Historial de Reservaciones
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+      <Card className="shadow-lg border-border/50">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg font-display text-foreground flex items-center gap-2">
+            <History className="h-5 w-5 text-primary" />
+            Historial de Reservaciones
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {reservations.length > 0 ? (
             <div className="space-y-2">
               {reservations.map((r) => (
                 <div key={r.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50">
-                  <span className="text-sm text-foreground">
-                    {format(new Date(r.reservation_date + "T12:00:00"), "EEE d 'de' MMM, yyyy", { locale: es })}
-                  </span>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">
+                      {format(new Date(r.reservation_date + "T12:00:00"), "EEEE d 'de' MMMM, yyyy", { locale: es })}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Solicitado el {format(new Date(r.created_at), "d MMM yyyy", { locale: es })}
+                    </span>
+                  </div>
                   {getStatusBadge(r.status)}
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          ) : (
+            <div className="text-center py-6">
+              <Calendar className="h-10 w-10 text-muted-foreground/40 mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">No tienes reservaciones aún.</p>
+              <p className="text-xs text-muted-foreground">Regresa al calendario para solicitar un día.</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -363,6 +423,18 @@ function InfoField({ icon, label, value }: { icon: React.ReactNode; label: strin
     <div className="space-y-0.5">
       <p className="text-xs text-muted-foreground flex items-center gap-1">{icon} {label}</p>
       <p className="text-sm text-foreground font-medium">{value}</p>
+    </div>
+  );
+}
+
+function StatCard({ icon, label, value, bgClass }: { icon: React.ReactNode; label: string; value: number; bgClass: string }) {
+  return (
+    <div className={`flex items-center gap-3 p-3 rounded-lg ${bgClass} border border-border/30`}>
+      {icon}
+      <div>
+        <p className="text-xl font-bold text-foreground">{value}</p>
+        <p className="text-xs text-muted-foreground">{label}</p>
+      </div>
     </div>
   );
 }
