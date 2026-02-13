@@ -10,9 +10,13 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Check, X, LogOut, Users, Calendar, Download, Bell, Search, User, Mail, Phone, MapPin, CalendarCheck, CheckCircle2, Clock, AlertCircle, ArrowLeft } from "lucide-react";
+import {
+  Check, X, LogOut, Users, Calendar, Download, Bell, Search, User, Mail,
+  Phone, MapPin, CalendarCheck, Clock, AlertCircle, ArrowUpDown, ToggleLeft, ToggleRight, UserCheck, UserX,
+} from "lucide-react";
 
 interface Reservation {
   id: string;
@@ -49,6 +53,10 @@ interface VolunteerReservation {
   created_at: string;
 }
 
+type StatusFilter = "all" | "active" | "inactive";
+type SortField = "name" | "date" | "requests";
+type SortDir = "asc" | "desc";
+
 export default function AdminDashboard() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
@@ -56,9 +64,13 @@ export default function AdminDashboard() {
   const [isLoadingVolunteers, setIsLoadingVolunteers] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [sortField, setSortField] = useState<SortField>("date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [selectedVolunteer, setSelectedVolunteer] = useState<Volunteer | null>(null);
   const [volunteerReservations, setVolunteerReservations] = useState<VolunteerReservation[]>([]);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [togglingStatus, setTogglingStatus] = useState<string | null>(null);
   const { signOut } = useAuth();
   const navigate = useNavigate();
 
@@ -140,6 +152,33 @@ export default function AdminDashboard() {
     }
   };
 
+  const toggleVolunteerStatus = async (volunteer: Volunteer) => {
+    const newStatus = volunteer.status === "active" ? "inactive" : "active";
+    setTogglingStatus(volunteer.id);
+    try {
+      const { error } = await supabase
+        .from("volunteers")
+        .update({ status: newStatus })
+        .eq("id", volunteer.id);
+
+      if (error) throw error;
+
+      setVolunteers((prev) =>
+        prev.map((v) => (v.id === volunteer.id ? { ...v, status: newStatus } : v))
+      );
+
+      if (selectedVolunteer?.id === volunteer.id) {
+        setSelectedVolunteer({ ...selectedVolunteer, status: newStatus });
+      }
+
+      toast.success(`Voluntario marcado como ${newStatus === "active" ? "activo" : "inactivo"}`);
+    } catch {
+      toast.error("Error al cambiar estado del voluntario");
+    } finally {
+      setTogglingStatus(null);
+    }
+  };
+
   const handleConfirmation = async (reservationId: string, action: "confirm" | "cancel") => {
     setProcessingId(reservationId);
     try {
@@ -163,7 +202,7 @@ export default function AdminDashboard() {
     try {
       const { data, error } = await supabase.functions.invoke("check-unfilled-slots");
       if (error) throw error;
-      
+
       if (data.message?.includes("weekend")) {
         toast.info("Mañana es fin de semana, no hay servicio");
       } else if (data.message?.includes("filled")) {
@@ -182,7 +221,7 @@ export default function AdminDashboard() {
     navigate("/admin/login");
   };
 
-  const exportToCSV = () => {
+  const exportReservationsCSV = () => {
     const headers = ["Fecha", "Nombre", "Apellidos", "Email", "Edad", "Dirección", "Estado"];
     const rows = reservations.map((r) => [
       r.reservation_date,
@@ -203,19 +242,77 @@ export default function AdminDashboard() {
     link.click();
   };
 
+  const exportVolunteersCSV = () => {
+    const headers = ["Nombre", "Apellidos", "Correo", "Teléfono", "Edad", "Dirección", "Estado", "Fecha Registro", "Solicitudes", "Aprobadas", "Pendientes"];
+    const rows = filteredAndSortedVolunteers.map((v) => {
+      const stats = getVolunteerStats(v.id);
+      return [
+        v.first_name,
+        v.last_name,
+        v.email,
+        v.phone || "",
+        v.age,
+        `"${v.address}"`,
+        v.status === "active" ? "Activo" : "Inactivo",
+        format(new Date(v.created_at), "yyyy-MM-dd"),
+        stats.total,
+        stats.confirmed,
+        stats.pending,
+      ];
+    });
+
+    const csvContent = [headers, ...rows].map((row) => row.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `voluntarios_${format(new Date(), "yyyy-MM-dd")}.csv`;
+    link.click();
+  };
+
   const pendingReservations = reservations.filter((r) => r.status === "pending");
   const confirmedReservations = reservations.filter((r) => r.status === "confirmed");
   const cancelledReservations = reservations.filter((r) => r.status === "cancelled");
 
-  const filteredVolunteers = volunteers.filter((v) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      v.first_name.toLowerCase().includes(q) ||
-      v.last_name.toLowerCase().includes(q) ||
-      v.email.toLowerCase().includes(q)
-    );
-  });
+  const getVolunteerStats = (volunteerId: string) => {
+    const vReservations = reservations.filter((r) => r.volunteers.id === volunteerId);
+    return {
+      total: vReservations.length,
+      confirmed: vReservations.filter((r) => r.status === "confirmed").length,
+      pending: vReservations.filter((r) => r.status === "pending").length,
+    };
+  };
+
+  const filteredAndSortedVolunteers = volunteers
+    .filter((v) => {
+      if (statusFilter !== "all" && v.status !== statusFilter) return false;
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        v.first_name.toLowerCase().includes(q) ||
+        v.last_name.toLowerCase().includes(q) ||
+        v.email.toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => {
+      const dir = sortDir === "asc" ? 1 : -1;
+      switch (sortField) {
+        case "name":
+          return dir * `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`);
+        case "date":
+          return dir * (new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        case "requests": {
+          const aTotal = getVolunteerStats(a.id).total;
+          const bTotal = getVolunteerStats(b.id).total;
+          return dir * (aTotal - bTotal);
+        }
+        default:
+          return 0;
+      }
+    });
+
+  const activeCount = volunteers.filter((v) => v.status === "active").length;
+  const inactiveCount = volunteers.filter((v) => v.status === "inactive").length;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -230,13 +327,13 @@ export default function AdminDashboard() {
     }
   };
 
-  const getVolunteerStats = (volunteerId: string) => {
-    const vReservations = reservations.filter((r) => r.volunteers.id === volunteerId);
-    return {
-      total: vReservations.length,
-      confirmed: vReservations.filter((r) => r.status === "confirmed").length,
-      pending: vReservations.filter((r) => r.status === "pending").length,
-    };
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
   };
 
   const ReservationTable = ({ data, showActions = false }: { data: Reservation[]; showActions?: boolean }) => (
@@ -302,12 +399,14 @@ export default function AdminDashboard() {
   );
 
   // Detail modal stats
-  const detailStats = selectedVolunteer ? {
-    total: volunteerReservations.length,
-    confirmed: volunteerReservations.filter((r) => r.status === "confirmed").length,
-    pending: volunteerReservations.filter((r) => r.status === "pending").length,
-    cancelled: volunteerReservations.filter((r) => r.status === "cancelled").length,
-  } : null;
+  const detailStats = selectedVolunteer
+    ? {
+        total: volunteerReservations.length,
+        confirmed: volunteerReservations.filter((r) => r.status === "confirmed").length,
+        pending: volunteerReservations.filter((r) => r.status === "pending").length,
+        cancelled: volunteerReservations.filter((r) => r.status === "cancelled").length,
+      }
+    : null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -323,7 +422,7 @@ export default function AdminDashboard() {
               <Bell className="h-4 w-4 mr-2" />
               Verificar Cupos
             </Button>
-            <Button variant="outline" size="sm" onClick={exportToCSV}>
+            <Button variant="outline" size="sm" onClick={exportReservationsCSV}>
               <Download className="h-4 w-4 mr-2" />
               Exportar CSV
             </Button>
@@ -337,12 +436,12 @@ export default function AdminDashboard() {
 
       <main className="container mx-auto px-4 py-8">
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-warning/10 rounded-full">
-                  <Calendar className="h-6 w-6 text-warning-foreground" />
+                  <Clock className="h-6 w-6 text-warning-foreground" />
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-foreground">{pendingReservations.length}</p>
@@ -383,19 +482,33 @@ export default function AdminDashboard() {
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-accent/10 rounded-full">
-                  <CalendarCheck className="h-6 w-6 text-accent-foreground" />
+                <div className="p-3 bg-success/10 rounded-full">
+                  <UserCheck className="h-6 w-6 text-success" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-foreground">{reservations.length}</p>
-                  <p className="text-sm text-muted-foreground">Total Reservas</p>
+                  <p className="text-2xl font-bold text-foreground">{activeCount}</p>
+                  <p className="text-sm text-muted-foreground">Activos</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-muted rounded-full">
+                  <UserX className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-foreground">{inactiveCount}</p>
+                  <p className="text-sm text-muted-foreground">Inactivos</p>
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Main Tabs: Reservaciones + Voluntarios */}
+        {/* Main Tabs */}
         <Tabs defaultValue="reservations" className="space-y-4">
           <TabsList>
             <TabsTrigger value="reservations" className="gap-2">
@@ -458,22 +571,44 @@ export default function AdminDashboard() {
           <TabsContent value="volunteers">
             <Card>
               <CardHeader>
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <Users className="h-5 w-5" />
-                      Directorio de Voluntarios
-                    </CardTitle>
-                    <CardDescription>Consulta perfiles y actividad de cada voluntario</CardDescription>
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Users className="h-5 w-5" />
+                        Directorio de Voluntarios
+                      </CardTitle>
+                      <CardDescription>
+                        {filteredAndSortedVolunteers.length} de {volunteers.length} voluntarios
+                      </CardDescription>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={exportVolunteersCSV}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Exportar Voluntarios
+                    </Button>
                   </div>
-                  <div className="relative w-full sm:w-72">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Buscar por nombre o correo..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-9"
-                    />
+
+                  {/* Filters row */}
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar por nombre o correo..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-9"
+                      />
+                    </div>
+                    <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+                      <SelectTrigger className="w-full sm:w-40">
+                        <SelectValue placeholder="Estado" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        <SelectItem value="active">Activos</SelectItem>
+                        <SelectItem value="inactive">Inactivos</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
               </CardHeader>
@@ -482,7 +617,7 @@ export default function AdminDashboard() {
                   <div className="flex justify-center py-12">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                   </div>
-                ) : filteredVolunteers.length === 0 ? (
+                ) : filteredAndSortedVolunteers.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     <Users className="h-10 w-10 mx-auto mb-2 opacity-40" />
                     <p>No se encontraron voluntarios</p>
@@ -491,20 +626,35 @@ export default function AdminDashboard() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Voluntario</TableHead>
+                        <TableHead>
+                          <button className="flex items-center gap-1 hover:text-foreground transition-colors" onClick={() => toggleSort("name")}>
+                            Voluntario
+                            <ArrowUpDown className="h-3 w-3" />
+                          </button>
+                        </TableHead>
                         <TableHead>Correo</TableHead>
                         <TableHead>Teléfono</TableHead>
                         <TableHead>Estado</TableHead>
-                        <TableHead>Solicitudes</TableHead>
-                        <TableHead>Aprobadas</TableHead>
-                        <TableHead className="text-right">Acción</TableHead>
+                        <TableHead>
+                          <button className="flex items-center gap-1 hover:text-foreground transition-colors" onClick={() => toggleSort("date")}>
+                            Registro
+                            <ArrowUpDown className="h-3 w-3" />
+                          </button>
+                        </TableHead>
+                        <TableHead>
+                          <button className="flex items-center gap-1 hover:text-foreground transition-colors" onClick={() => toggleSort("requests")}>
+                            Solicitudes
+                            <ArrowUpDown className="h-3 w-3" />
+                          </button>
+                        </TableHead>
+                        <TableHead className="text-right">Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredVolunteers.map((v) => {
+                      {filteredAndSortedVolunteers.map((v) => {
                         const stats = getVolunteerStats(v.id);
                         return (
-                          <TableRow key={v.id}>
+                          <TableRow key={v.id} className={v.status === "inactive" ? "opacity-60" : ""}>
                             <TableCell>
                               <div className="flex items-center gap-2">
                                 <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center overflow-hidden border border-border">
@@ -524,12 +674,29 @@ export default function AdminDashboard() {
                                 {v.status === "active" ? "Activo" : "Inactivo"}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-center">{stats.total}</TableCell>
-                            <TableCell className="text-center">{stats.confirmed}</TableCell>
+                            <TableCell className="text-muted-foreground text-sm">
+                              {format(new Date(v.created_at), "d MMM yyyy", { locale: es })}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <span className="font-medium">{stats.total}</span>
+                              <span className="text-muted-foreground text-xs ml-1">({stats.confirmed} ✓)</span>
+                            </TableCell>
                             <TableCell className="text-right">
-                              <Button size="sm" variant="outline" onClick={() => openVolunteerDetail(v)}>
-                                Ver perfil
-                              </Button>
+                              <div className="flex gap-1 justify-end">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  title={v.status === "active" ? "Desactivar" : "Activar"}
+                                  onClick={() => toggleVolunteerStatus(v)}
+                                  disabled={togglingStatus === v.id}
+                                  className={v.status === "active" ? "text-warning-foreground hover:bg-warning/10" : "text-success hover:bg-success/10"}
+                                >
+                                  {v.status === "active" ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => openVolunteerDetail(v)}>
+                                  Ver perfil
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         );
@@ -557,12 +724,25 @@ export default function AdminDashboard() {
                       <User className="h-6 w-6 text-muted-foreground" />
                     )}
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <p className="text-lg">{selectedVolunteer.first_name} {selectedVolunteer.last_name}</p>
                     <p className="text-sm font-normal text-muted-foreground">
                       Registrado el {format(new Date(selectedVolunteer.created_at), "d 'de' MMMM, yyyy", { locale: es })}
                     </p>
                   </div>
+                  <Button
+                    size="sm"
+                    variant={selectedVolunteer.status === "active" ? "outline" : "default"}
+                    onClick={() => toggleVolunteerStatus(selectedVolunteer)}
+                    disabled={togglingStatus === selectedVolunteer.id}
+                    className="shrink-0"
+                  >
+                    {selectedVolunteer.status === "active" ? (
+                      <><ToggleRight className="h-4 w-4 mr-1" /> Activo</>
+                    ) : (
+                      <><ToggleLeft className="h-4 w-4 mr-1" /> Inactivo</>
+                    )}
+                  </Button>
                 </DialogTitle>
               </DialogHeader>
 
@@ -580,11 +760,6 @@ export default function AdminDashboard() {
                   <div className="flex items-center gap-2 text-sm">
                     <Calendar className="h-4 w-4 text-primary" />
                     <span className="text-muted-foreground">{selectedVolunteer.age} años</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <Badge variant={selectedVolunteer.status === "active" ? "default" : "secondary"} className="text-xs">
-                      {selectedVolunteer.status === "active" ? "Activo" : "Inactivo"}
-                    </Badge>
                   </div>
                   <div className="flex items-center gap-2 text-sm col-span-2">
                     <MapPin className="h-4 w-4 text-primary shrink-0" />
@@ -613,6 +788,14 @@ export default function AdminDashboard() {
                     </div>
                   </div>
                 )}
+
+                {/* Placeholder for future metrics */}
+                <div className="p-3 rounded-lg border border-dashed border-border bg-muted/30">
+                  <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    Horas acumuladas y asistencias — próximamente
+                  </p>
+                </div>
 
                 {/* History */}
                 <div>
