@@ -44,7 +44,7 @@ const Index = () => {
               {step === "register"
                 ? "Tu ayuda hace la diferencia. Regístrate y selecciona los días que puedas apoyar en nuestra cocina comunitaria."
                 : step === "calendar"
-                ? "Selecciona el día que deseas asistir. El servicio es de 12:00 a 15:00 hrs."
+                ? "Selecciona el día que deseas asistir. El servicio es de 11:45 a 14:30 hrs."
                 : "Revisa y actualiza tu información personal."}
             </p>
           </div>
