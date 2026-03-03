@@ -147,38 +147,44 @@ export type Database = {
       }
       volunteers: {
         Row: {
-          address: string
+          address: string | null
           age: number
           avatar_url: string | null
+          birthdate: string | null
           created_at: string
           email: string
           first_name: string
           id: string
           last_name: string
+          occupation: string | null
           phone: string | null
           status: string
         }
         Insert: {
-          address: string
+          address?: string | null
           age: number
           avatar_url?: string | null
+          birthdate?: string | null
           created_at?: string
           email: string
           first_name: string
           id?: string
           last_name: string
+          occupation?: string | null
           phone?: string | null
           status?: string
         }
         Update: {
-          address?: string
+          address?: string | null
           age?: number
           avatar_url?: string | null
+          birthdate?: string | null
           created_at?: string
           email?: string
           first_name?: string
           id?: string
           last_name?: string
+          occupation?: string | null
           phone?: string | null
           status?: string
         }
