@@ -102,7 +102,7 @@ const Index = () => {
               </div>
               <h3 className="font-display font-semibold text-foreground mb-2">Cupos Diarios</h3>
               <p className="text-sm text-muted-foreground">
-                Máximo 23 voluntarios por día
+                Máximo 20 voluntarios por día
               </p>
             </div>
 
