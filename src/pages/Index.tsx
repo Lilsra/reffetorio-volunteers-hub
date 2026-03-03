@@ -44,7 +44,7 @@ const Index = () => {
               {step === "register"
                 ? "Tu ayuda hace la diferencia. Regístrate y selecciona los días que puedas apoyar en nuestra cocina comunitaria."
                 : step === "calendar"
-                ? "Selecciona el día que deseas asistir. El servicio es de 12:00 a 15:00 hrs."
+                ? "Selecciona el día que deseas asistir. El servicio es de 11:45 a 14:30 hrs."
                 : "Revisa y actualiza tu información personal."}
             </p>
           </div>
@@ -92,7 +92,7 @@ const Index = () => {
               </div>
               <h3 className="font-display font-semibold text-foreground mb-2">Servicio</h3>
               <p className="text-sm text-muted-foreground">
-                Lunes a Viernes de 12:00 a 15:00 hrs
+                Lunes a Viernes de 11:45 a 14:30 hrs
               </p>
             </div>
 
@@ -102,7 +102,7 @@ const Index = () => {
               </div>
               <h3 className="font-display font-semibold text-foreground mb-2">Cupos Diarios</h3>
               <p className="text-sm text-muted-foreground">
-                Máximo 23 voluntarios por día
+                Máximo 20 voluntarios por día
               </p>
             </div>
 

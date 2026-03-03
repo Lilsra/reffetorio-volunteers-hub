@@ -9,8 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { User, Mail, MapPin, Phone, Calendar, Edit3, Save, X, History, Camera, CalendarCheck, Clock, CheckCircle2, AlertCircle } from "lucide-react";
-import { format } from "date-fns";
+import { User, Mail, Phone, Calendar, Edit3, Save, X, History, Camera, CalendarCheck, Clock, CheckCircle2, AlertCircle, Briefcase, Cake, PartyPopper } from "lucide-react";
+import { format, isToday, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
 const phoneRegex = /^[0-9]{10}$/;
@@ -19,8 +19,8 @@ const profileSchema = z.object({
   first_name: z.string().trim().min(2, "El nombre debe tener al menos 2 caracteres").max(50),
   last_name: z.string().trim().min(2, "Los apellidos deben tener al menos 2 caracteres").max(100),
   age: z.number({ invalid_type_error: "Ingresa una edad válida" }).min(16).max(100),
-  address: z.string().trim().min(10, "La dirección debe ser más específica").max(200),
   phone: z.string().trim().regex(phoneRegex, "Ingresa un número de 10 dígitos").optional().or(z.literal("")),
+  occupation: z.string().trim().max(100).optional().or(z.literal("")),
 });
 
 type ProfileFormData = z.infer<typeof profileSchema>;
@@ -35,6 +35,13 @@ interface Reservation {
 interface VolunteerProfileProps {
   volunteerId: string;
   onBack: () => void;
+}
+
+function isBirthdayToday(birthdate: string | null): boolean {
+  if (!birthdate) return false;
+  const bd = parseISO(birthdate);
+  const today = new Date();
+  return bd.getMonth() === today.getMonth() && bd.getDate() === today.getDate();
 }
 
 export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps) {
@@ -74,8 +81,8 @@ export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps)
         first_name: data.first_name,
         last_name: data.last_name,
         age: data.age,
-        address: data.address,
         phone: data.phone || "",
+        occupation: data.occupation || "",
       });
     } catch (error) {
       console.error("Error loading profile:", error);
@@ -151,8 +158,8 @@ export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps)
           first_name: data.first_name.trim(),
           last_name: data.last_name.trim(),
           age: data.age,
-          address: data.address.trim(),
           phone: data.phone?.trim() || null,
+          occupation: data.occupation?.trim() || null,
         })
         .eq("id", volunteerId);
 
@@ -192,6 +199,8 @@ export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps)
 
   if (!volunteer) return null;
 
+  const birthdayToday = isBirthdayToday(volunteer.birthdate);
+
   // Stats
   const totalRequested = reservations.length;
   const totalConfirmed = reservations.filter((r) => r.status === "confirmed").length;
@@ -200,6 +209,25 @@ export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps)
 
   return (
     <div className="w-full max-w-lg space-y-4 animate-fade-in">
+      {/* Birthday Banner */}
+      {birthdayToday && (
+        <Card className="border-2 border-primary bg-gradient-to-r from-primary/10 via-accent/10 to-primary/10 shadow-lg overflow-hidden relative">
+          <CardContent className="py-6 text-center">
+            <div className="flex items-center justify-center gap-3 mb-2">
+              <PartyPopper className="h-8 w-8 text-primary animate-bounce" />
+              <Cake className="h-8 w-8 text-destructive animate-bounce" style={{ animationDelay: "0.2s" }} />
+              <PartyPopper className="h-8 w-8 text-primary animate-bounce" style={{ animationDelay: "0.4s" }} />
+            </div>
+            <h3 className="text-xl font-display font-bold text-primary">
+              🎉 ¡Feliz Cumpleaños, {volunteer.first_name}! 🎂
+            </h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              ¡Toda la familia Reffetorio te desea un día maravilloso!
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Profile Card */}
       <Card className="shadow-lg border-border/50">
         <CardHeader className="pb-2">
@@ -228,13 +256,9 @@ export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps)
           {/* Avatar Section */}
           <div className="flex flex-col items-center pt-2 pb-1">
             <div className="relative group">
-              <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-primary/20 bg-muted flex items-center justify-center shadow-md">
+              <div className={`w-24 h-24 rounded-full overflow-hidden border-4 ${birthdayToday ? 'border-primary shadow-[0_0_20px_hsl(var(--primary)/0.3)]' : 'border-primary/20'} bg-muted flex items-center justify-center shadow-md`}>
                 {volunteer.avatar_url ? (
-                  <img
-                    src={volunteer.avatar_url}
-                    alt="Foto de perfil"
-                    className="w-full h-full object-cover"
-                  />
+                  <img src={volunteer.avatar_url} alt="Foto de perfil" className="w-full h-full object-cover" />
                 ) : (
                   <User className="h-10 w-10 text-muted-foreground" />
                 )}
@@ -251,13 +275,7 @@ export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps)
                   <Camera className="h-4 w-4" />
                 )}
               </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handlePhotoUpload}
-              />
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
             </div>
             <p className="text-xs text-muted-foreground mt-2">Toca el ícono para cambiar tu foto</p>
           </div>
@@ -305,11 +323,11 @@ export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps)
                 </div>
               </div>
               <div className="space-y-1">
-                <Label htmlFor="address" className="text-xs flex items-center gap-1">
-                  <MapPin className="h-3 w-3 text-primary" /> Dirección
+                <Label htmlFor="occupation" className="text-xs flex items-center gap-1">
+                  <Briefcase className="h-3 w-3 text-primary" /> Ocupación
                 </Label>
-                <Input id="address" {...register("address")} />
-                {errors.address && <p className="text-xs text-destructive">{errors.address.message}</p>}
+                <Input id="occupation" {...register("occupation")} />
+                {errors.occupation && <p className="text-xs text-destructive">{errors.occupation.message}</p>}
               </div>
               <div className="space-y-1">
                 <Label className="text-xs flex items-center gap-1">
@@ -330,7 +348,14 @@ export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps)
                 <InfoField icon={<Calendar className="h-3 w-3" />} label="Edad" value={`${volunteer.age} años`} />
                 <InfoField icon={<Phone className="h-3 w-3" />} label="Teléfono" value={volunteer.phone || "No registrado"} />
               </div>
-              <InfoField icon={<MapPin className="h-3 w-3" />} label="Dirección" value={volunteer.address} />
+              <InfoField icon={<Briefcase className="h-3 w-3" />} label="Ocupación" value={volunteer.occupation || "No especificada"} />
+              {volunteer.birthdate && (
+                <InfoField
+                  icon={<Cake className="h-3 w-3" />}
+                  label="Cumpleaños"
+                  value={format(parseISO(volunteer.birthdate), "d 'de' MMMM", { locale: es })}
+                />
+              )}
               <InfoField icon={<Mail className="h-3 w-3" />} label="Correo" value={volunteer.email} />
             </div>
           )}
@@ -347,30 +372,10 @@ export function VolunteerProfile({ volunteerId, onBack }: VolunteerProfileProps)
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-3">
-            <StatCard
-              icon={<Calendar className="h-5 w-5 text-primary" />}
-              label="Días solicitados"
-              value={totalRequested}
-              bgClass="bg-primary/10"
-            />
-            <StatCard
-              icon={<CheckCircle2 className="h-5 w-5 text-success" />}
-              label="Días aprobados"
-              value={totalConfirmed}
-              bgClass="bg-success/10"
-            />
-            <StatCard
-              icon={<Clock className="h-5 w-5 text-warning-foreground" />}
-              label="Pendientes"
-              value={totalPending}
-              bgClass="bg-warning/10"
-            />
-            <StatCard
-              icon={<AlertCircle className="h-5 w-5 text-destructive" />}
-              label="Cancelados"
-              value={totalCancelled}
-              bgClass="bg-destructive/10"
-            />
+            <StatCard icon={<Calendar className="h-5 w-5 text-primary" />} label="Días solicitados" value={totalRequested} bgClass="bg-primary/10" />
+            <StatCard icon={<CheckCircle2 className="h-5 w-5 text-success" />} label="Días aprobados" value={totalConfirmed} bgClass="bg-success/10" />
+            <StatCard icon={<Clock className="h-5 w-5 text-warning-foreground" />} label="Pendientes" value={totalPending} bgClass="bg-warning/10" />
+            <StatCard icon={<AlertCircle className="h-5 w-5 text-destructive" />} label="Cancelados" value={totalCancelled} bgClass="bg-destructive/10" />
           </div>
           {totalRequested === 0 && (
             <p className="text-sm text-muted-foreground text-center mt-4">

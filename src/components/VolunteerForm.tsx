@@ -6,9 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { User, Mail, MapPin, Calendar, Phone, Camera, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { User, Mail, Calendar as CalendarIcon, Phone, Camera, X, Briefcase } from "lucide-react";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 
 const phoneRegex = /^[0-9]{10}$/;
 
@@ -16,9 +21,9 @@ const volunteerSchema = z.object({
   first_name: z.string().trim().min(2, "El nombre debe tener al menos 2 caracteres").max(50, "El nombre es demasiado largo"),
   last_name: z.string().trim().min(2, "Los apellidos deben tener al menos 2 caracteres").max(100, "Los apellidos son demasiado largos"),
   age: z.number({ invalid_type_error: "Ingresa una edad válida" }).min(16, "Debes tener al menos 16 años").max(100, "Edad inválida"),
-  address: z.string().trim().min(10, "La dirección debe ser más específica").max(200, "La dirección es demasiado larga"),
   email: z.string().trim().email("Correo electrónico inválido").max(100, "El correo es demasiado largo").toLowerCase(),
   phone: z.string().trim().regex(phoneRegex, "Ingresa un número de 10 dígitos"),
+  occupation: z.string().trim().min(2, "Indica a qué te dedicas").max(100, "Demasiado largo").optional().or(z.literal("")),
 });
 
 type VolunteerFormData = z.infer<typeof volunteerSchema>;
@@ -31,6 +36,7 @@ export function VolunteerForm({ onSuccess }: VolunteerFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [birthdate, setBirthdate] = useState<Date | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
@@ -117,9 +123,11 @@ export function VolunteerForm({ onSuccess }: VolunteerFormProps) {
           first_name: data.first_name.trim(),
           last_name: data.last_name.trim(),
           age: data.age,
-          address: data.address.trim(),
+          address: "",
           email: data.email.trim().toLowerCase(),
           phone: data.phone.trim(),
+          occupation: data.occupation?.trim() || null,
+          birthdate: birthdate ? format(birthdate, "yyyy-MM-dd") : null,
         })
         .select()
         .single();
@@ -147,6 +155,7 @@ export function VolunteerForm({ onSuccess }: VolunteerFormProps) {
       onSuccess(volunteer.id, volunteer.email);
       reset();
       removePhoto();
+      setBirthdate(undefined);
     } catch (error: any) {
       console.error("Error registering volunteer:", error);
       toast.error("Error al registrar. Por favor intenta de nuevo.");
@@ -238,7 +247,7 @@ export function VolunteerForm({ onSuccess }: VolunteerFormProps) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="age" className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-primary" />
+                <CalendarIcon className="h-4 w-4 text-primary" />
                 Edad <span className="text-destructive">*</span>
               </Label>
               <Input
@@ -271,18 +280,52 @@ export function VolunteerForm({ onSuccess }: VolunteerFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="address" className="flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-primary" />
-              Dirección <span className="text-destructive">*</span>
+            <Label htmlFor="occupation" className="flex items-center gap-2">
+              <Briefcase className="h-4 w-4 text-primary" />
+              ¿A qué te dedicas?
             </Label>
             <Input
-              id="address"
-              placeholder="Tu dirección completa"
-              {...register("address")}
+              id="occupation"
+              placeholder="Ej: Estudiante, Chef, Ingeniero..."
+              {...register("occupation")}
             />
-            {errors.address && (
-              <p className="text-sm text-destructive">{errors.address.message}</p>
+            {errors.occupation && (
+              <p className="text-sm text-destructive">{errors.occupation.message}</p>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              <CalendarIcon className="h-4 w-4 text-primary" />
+              Fecha de nacimiento
+            </Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-full justify-start text-left font-normal",
+                    !birthdate && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {birthdate ? format(birthdate, "d 'de' MMMM, yyyy", { locale: es }) : "Selecciona tu fecha de nacimiento"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={birthdate}
+                  onSelect={setBirthdate}
+                  disabled={(date) => date > new Date() || date < new Date("1920-01-01")}
+                  initialFocus
+                  className={cn("p-3 pointer-events-auto")}
+                  captionLayout="dropdown-buttons"
+                  fromYear={1920}
+                  toYear={new Date().getFullYear()}
+                />
+              </PopoverContent>
+            </Popover>
           </div>
 
           <div className="space-y-2">

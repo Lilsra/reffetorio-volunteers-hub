@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
   Check, X, LogOut, Users, Calendar, Download, Bell, Search, User, Mail,
-  Phone, MapPin, CalendarCheck, Clock, AlertCircle, ArrowUpDown, ToggleLeft, ToggleRight, UserCheck, UserX,
+  Phone, CalendarCheck, Clock, AlertCircle, ArrowUpDown, ToggleLeft, ToggleRight, UserCheck, UserX, Cake, Briefcase,
 } from "lucide-react";
 
 interface Reservation {
@@ -29,7 +29,6 @@ interface Reservation {
     last_name: string;
     email: string;
     age: number;
-    address: string;
   };
 }
 
@@ -39,11 +38,12 @@ interface Volunteer {
   last_name: string;
   email: string;
   age: number;
-  address: string;
   phone: string | null;
   avatar_url: string | null;
   status: string;
   created_at: string;
+  birthdate: string | null;
+  occupation: string | null;
 }
 
 interface VolunteerReservation {
@@ -56,6 +56,13 @@ interface VolunteerReservation {
 type StatusFilter = "all" | "active" | "inactive";
 type SortField = "name" | "date" | "requests";
 type SortDir = "asc" | "desc";
+
+function isBirthdayToday(birthdate: string | null): boolean {
+  if (!birthdate) return false;
+  const bd = parseISO(birthdate);
+  const today = new Date();
+  return bd.getMonth() === today.getMonth() && bd.getDate() === today.getDate();
+}
 
 export default function AdminDashboard() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
@@ -101,8 +108,7 @@ export default function AdminDashboard() {
             first_name,
             last_name,
             email,
-            age,
-            address
+            age
           )
         `)
         .order("reservation_date", { ascending: true })
@@ -222,14 +228,13 @@ export default function AdminDashboard() {
   };
 
   const exportReservationsCSV = () => {
-    const headers = ["Fecha", "Nombre", "Apellidos", "Email", "Edad", "Dirección", "Estado"];
+    const headers = ["Fecha", "Nombre", "Apellidos", "Email", "Edad", "Estado"];
     const rows = reservations.map((r) => [
       r.reservation_date,
       r.volunteers.first_name,
       r.volunteers.last_name,
       r.volunteers.email,
       r.volunteers.age,
-      r.volunteers.address,
       r.status,
     ]);
 
@@ -243,7 +248,7 @@ export default function AdminDashboard() {
   };
 
   const exportVolunteersCSV = () => {
-    const headers = ["Nombre", "Apellidos", "Correo", "Teléfono", "Edad", "Dirección", "Estado", "Fecha Registro", "Solicitudes", "Aprobadas", "Pendientes"];
+    const headers = ["Nombre", "Apellidos", "Correo", "Teléfono", "Edad", "Ocupación", "Cumpleaños", "Estado", "Fecha Registro", "Solicitudes", "Aprobadas", "Pendientes"];
     const rows = filteredAndSortedVolunteers.map((v) => {
       const stats = getVolunteerStats(v.id);
       return [
@@ -252,7 +257,8 @@ export default function AdminDashboard() {
         v.email,
         v.phone || "",
         v.age,
-        `"${v.address}"`,
+        v.occupation || "",
+        v.birthdate || "",
         v.status === "active" ? "Activo" : "Inactivo",
         format(new Date(v.created_at), "yyyy-MM-dd"),
         stats.total,
@@ -282,6 +288,8 @@ export default function AdminDashboard() {
       pending: vReservations.filter((r) => r.status === "pending").length,
     };
   };
+
+  const birthdayVolunteers = volunteers.filter((v) => v.status === "active" && isBirthdayToday(v.birthdate));
 
   const filteredAndSortedVolunteers = volunteers
     .filter((v) => {
@@ -435,6 +443,26 @@ export default function AdminDashboard() {
       </header>
 
       <main className="container mx-auto px-4 py-8">
+        {/* Birthday Alert */}
+        {birthdayVolunteers.length > 0 && (
+          <Card className="mb-6 border-2 border-primary bg-gradient-to-r from-primary/5 via-accent/5 to-primary/5">
+            <CardContent className="py-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-full">
+                  <Cake className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground">🎂 ¡Cumpleaños hoy!</p>
+                  <p className="text-sm text-muted-foreground">
+                    {birthdayVolunteers.map((v) => `${v.first_name} ${v.last_name}`).join(", ")}
+                    {" — "}¡Felicítalos!
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
           <Card>
@@ -653,11 +681,12 @@ export default function AdminDashboard() {
                     <TableBody>
                       {filteredAndSortedVolunteers.map((v) => {
                         const stats = getVolunteerStats(v.id);
+                        const hasBirthday = isBirthdayToday(v.birthdate);
                         return (
                           <TableRow key={v.id} className={v.status === "inactive" ? "opacity-60" : ""}>
                             <TableCell>
                               <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center overflow-hidden border border-border">
+                                <div className={`w-8 h-8 rounded-full bg-muted flex items-center justify-center overflow-hidden border ${hasBirthday ? 'border-primary border-2' : 'border-border'}`}>
                                   {v.avatar_url ? (
                                     <img src={v.avatar_url} alt="" className="w-full h-full object-cover" />
                                   ) : (
@@ -665,6 +694,7 @@ export default function AdminDashboard() {
                                   )}
                                 </div>
                                 <span className="font-medium">{v.first_name} {v.last_name}</span>
+                                {hasBirthday && <Cake className="h-4 w-4 text-primary" />}
                               </div>
                             </TableCell>
                             <TableCell className="text-muted-foreground">{v.email}</TableCell>
@@ -717,7 +747,7 @@ export default function AdminDashboard() {
             <>
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center overflow-hidden border-2 border-primary/20">
+                  <div className={`w-12 h-12 rounded-full bg-muted flex items-center justify-center overflow-hidden border-2 ${isBirthdayToday(selectedVolunteer.birthdate) ? 'border-primary' : 'border-primary/20'}`}>
                     {selectedVolunteer.avatar_url ? (
                       <img src={selectedVolunteer.avatar_url} alt="" className="w-full h-full object-cover" />
                     ) : (
@@ -725,7 +755,10 @@ export default function AdminDashboard() {
                     )}
                   </div>
                   <div className="flex-1">
-                    <p className="text-lg">{selectedVolunteer.first_name} {selectedVolunteer.last_name}</p>
+                    <p className="text-lg flex items-center gap-2">
+                      {selectedVolunteer.first_name} {selectedVolunteer.last_name}
+                      {isBirthdayToday(selectedVolunteer.birthdate) && <span>🎂</span>}
+                    </p>
                     <p className="text-sm font-normal text-muted-foreground">
                       Registrado el {format(new Date(selectedVolunteer.created_at), "d 'de' MMMM, yyyy", { locale: es })}
                     </p>
@@ -747,6 +780,13 @@ export default function AdminDashboard() {
               </DialogHeader>
 
               <div className="space-y-4 mt-2">
+                {/* Birthday banner in detail */}
+                {isBirthdayToday(selectedVolunteer.birthdate) && (
+                  <div className="p-3 rounded-lg bg-gradient-to-r from-primary/10 to-accent/10 border border-primary/30 text-center">
+                    <p className="text-sm font-semibold text-primary">🎉 ¡Hoy es su cumpleaños! 🎂</p>
+                  </div>
+                )}
+
                 {/* Info */}
                 <div className="grid grid-cols-2 gap-3 p-4 bg-muted/50 rounded-lg border border-border/50">
                   <div className="flex items-center gap-2 text-sm">
@@ -761,10 +801,18 @@ export default function AdminDashboard() {
                     <Calendar className="h-4 w-4 text-primary" />
                     <span className="text-muted-foreground">{selectedVolunteer.age} años</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm col-span-2">
-                    <MapPin className="h-4 w-4 text-primary shrink-0" />
-                    <span className="text-muted-foreground">{selectedVolunteer.address}</span>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Briefcase className="h-4 w-4 text-primary" />
+                    <span className="text-muted-foreground">{selectedVolunteer.occupation || "No especificada"}</span>
                   </div>
+                  {selectedVolunteer.birthdate && (
+                    <div className="flex items-center gap-2 text-sm col-span-2">
+                      <Cake className="h-4 w-4 text-primary" />
+                      <span className="text-muted-foreground">
+                        Cumpleaños: {format(parseISO(selectedVolunteer.birthdate), "d 'de' MMMM", { locale: es })}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Stats */}
